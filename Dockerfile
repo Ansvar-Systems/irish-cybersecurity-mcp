@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # German Cybersecurity MCP — multi-stage Dockerfile
 # ─────────────────────────────────────────────────────────────────────────────
-# Build:  docker build -t german-cybersecurity-mcp .
-# Run:    docker run --rm -p 3000:3000 german-cybersecurity-mcp
+# Build:  docker build -t irish-cybersecurity-mcp .
+# Run:    docker run --rm -p 3000:3000 irish-cybersecurity-mcp
 #
 # The image expects a pre-built database at /app/data/bsi.db.
 # Override with BSI_DB_PATH for a custom location.
