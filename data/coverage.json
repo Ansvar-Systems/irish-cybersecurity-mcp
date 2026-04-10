@@ -1,0 +1,36 @@
+{
+  "mcp_id": "eu.ansvar/irish-cybersecurity-mcp",
+  "last_updated": "2026-04-10",
+  "sources": [
+    {
+      "id": "ncsc-ie-guidance-rss",
+      "name": "NCSC-IE Guidance RSS Feed",
+      "url": "https://www.ncsc.gov.ie/guidance/guidance.rss",
+      "type": "guidance",
+      "approximate_count": 28,
+      "status": "live",
+      "notes": "Official NCSC-IE cybersecurity guidance documents"
+    },
+    {
+      "id": "ncsc-ie-nis2",
+      "name": "NCSC-IE NIS2 Guidance",
+      "url": "https://www.ncsc.gov.ie/nis2/",
+      "type": "guidance",
+      "approximate_count": 5,
+      "status": "live",
+      "notes": "NIS2 Directive implementation guidance for Irish organisations"
+    },
+    {
+      "id": "ncsc-ie-advisories",
+      "name": "NCSC-IE Security Advisories",
+      "url": "https://www.ncsc.gov.ie/news/",
+      "type": "advisories",
+      "approximate_count": null,
+      "status": "live",
+      "notes": "Security advisories, CVE alerts, and threat notifications"
+    }
+  ],
+  "ingest_script": "scripts/ingest-ncsc-ie.ts",
+  "check_freshness_tool": "ie_cyber_check_data_freshness",
+  "list_sources_tool": "ie_cyber_list_sources"
+}

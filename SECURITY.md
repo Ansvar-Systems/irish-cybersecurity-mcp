@@ -11,32 +11,28 @@ We support only the latest minor version. Please upgrade to receive security pat
 
 ## Security Scanning
 
-This project uses multiple layers of automated security scanning:
+This project uses automated security scanning in CI/CD:
 
 ### Dependency Vulnerabilities
-- **Dependabot**: Automated dependency updates (weekly)
-- **npm audit**: Runs on every CI build
-- **Socket.dev**: Supply chain attack detection
 
-### Code Analysis
-- **CodeQL**: Static analysis for security vulnerabilities (weekly + on PRs)
-- **Semgrep**: SAST scanning for OWASP top 10, secrets, and TypeScript-specific issues
-- **Trivy**: Filesystem, dependency, and container image vulnerability scanning
-- **Gitleaks**: Secret detection across git history
+- **Dependabot**: Automated weekly dependency updates for npm packages and GitHub Actions (`.github/dependabot.yml`)
+- **npm audit**: Run manually before releases — `npm audit` to check for known vulnerabilities
 
 ### Container Security
-- **Docker Security Scan**: Daily container image scanning via Trivy
-- **SBOM Generation**: CycloneDX and SPDX format (365-day retention)
-- **OSSF Scorecard**: OpenSSF best practices scoring
+
+- **GHCR Build**: Docker image is built and pushed to GitHub Container Registry on each push to `main`/`dev` (`.github/workflows/ghcr-build.yml`)
+- **Secret Detection**: Gitleaks configured via `.gitleaks.toml` for secret scanning in git history
+
+### Data Freshness
+
+- **Weekly freshness check**: `.github/workflows/check-freshness.yml` runs NCSC-IE ingest in dry-run mode weekly to detect new content
+- **Monthly ingest**: `.github/workflows/ingest.yml` refreshes the NCSC-IE database and uploads as a GitHub Release asset
 
 ### What We Scan For
-- Known CVEs in dependencies
-- SQL injection vulnerabilities
-- Cross-site scripting (XSS)
-- Regular expression denial of service (ReDoS)
-- Path traversal attacks
-- Supply chain attacks (malicious packages, typosquatting)
-- Hardcoded secrets and credentials
+
+- Known CVEs in dependencies (via Dependabot + npm audit)
+- Hardcoded secrets and credentials (via Gitleaks)
+- Container image vulnerabilities (via GHCR build pipeline)
 
 ## Reporting a Vulnerability
 
@@ -60,8 +56,7 @@ This project follows security best practices:
 - Input validation on all user-provided parameters
 - Read-only database access (no write operations at runtime)
 - No execution of user-provided code
-- Automated security testing in CI/CD
-- Regular dependency updates via Dependabot
+- Automated dependency updates via Dependabot
 
 ## Database Security
 
@@ -71,17 +66,19 @@ The regulatory database is:
 - Pre-built and version-controlled (tamper evident)
 - Opened in read-only mode at runtime (no write risk)
 - Source data from official regulatory authorities (auditable)
-- Ingestion scripts require manual execution (no auto-download at runtime)
+- Ingestion scripts require manual or scheduled execution (no auto-download at runtime)
 
 ## Third-Party Dependencies
 
 We minimize dependencies and regularly audit:
-- Core runtime: Node.js, TypeScript, @ansvar/mcp-sqlite
-- MCP SDK: Official Anthropic package
+- Core runtime: Node.js, TypeScript
+- MCP SDK: Official Anthropic package (`@modelcontextprotocol/sdk`)
+- Database: `better-sqlite3`
+- Validation: `zod`
 - No unnecessary dependencies
 
-All dependencies are tracked via `package-lock.json` and scanned for vulnerabilities.
+All dependencies are tracked via `package-lock.json`.
 
 ---
 
-**Last Updated**: 2026-04-03
+**Last Updated**: 2026-04-10
