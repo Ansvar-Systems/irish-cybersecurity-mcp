@@ -1,0 +1,93 @@
+name: Ingest NCSC-IE Data
+
+on:
+  schedule:
+    # Run monthly on the 1st at 06:00 UTC
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force re-ingest even if already up to date"
+        required: false
+        default: "false"
+        type: boolean
+      dry_run:
+        description: "Dry run (no writes to DB)"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  ingest:
+    name: Ingest NCSC-IE Guidance and Advisories
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run ingest script
+        id: ingest
+        env:
+          NCSC_IE_DB_PATH: data/ncsc-ie.db
+        run: |
+          ARGS=""
+          if [ "${{ inputs.force }}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          npx tsx scripts/ingest-ncsc-ie.ts $ARGS 2>&1 | tee /tmp/ingest-report.txt
+
+      - name: Compress database
+        if: inputs.dry_run != 'true'
+        run: |
+          if [ -f data/ncsc-ie.db ]; then
+            gzip -k data/ncsc-ie.db -c > data/ncsc-ie.db.gz
+            echo "DB size: $(wc -c < data/ncsc-ie.db) bytes"
+            echo "Compressed: $(wc -c < data/ncsc-ie.db.gz) bytes"
+          else
+            echo "No database file produced; skipping compression."
+          fi
+
+      - name: Upload DB as GitHub Release asset
+        if: inputs.dry_run != 'true' && hashFiles('data/ncsc-ie.db.gz') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="data-$(date -u '+%Y%m%d')"
+          # Create or update the rolling data release
+          if gh release view "$TAG" &>/dev/null; then
+            gh release upload "$TAG" data/ncsc-ie.db.gz --clobber
+          else
+            gh release create "$TAG" data/ncsc-ie.db.gz \
+              --title "NCSC-IE Data $TAG" \
+              --notes "Auto-ingested NCSC-IE data. Download and gunzip to use as NCSC_IE_DB_PATH." \
+              --prerelease
+          fi
+
+      - name: Post ingest summary
+        if: always()
+        run: |
+          echo "## NCSC-IE Ingest Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Run date:** $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Dry run:** ${{ inputs.dry_run || 'false' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Ingest output" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/ingest-report.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
