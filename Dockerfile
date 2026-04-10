@@ -1,11 +1,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# German Cybersecurity MCP — multi-stage Dockerfile
+# Irish Cybersecurity MCP — multi-stage Dockerfile
 # ─────────────────────────────────────────────────────────────────────────────
 # Build:  docker build -t irish-cybersecurity-mcp .
 # Run:    docker run --rm -p 3000:3000 irish-cybersecurity-mcp
 #
-# The image expects a pre-built database at /app/data/bsi.db.
-# Override with BSI_DB_PATH for a custom location.
+# The image expects a pre-built database at /app/data/ncsc-ie.db.
+# Override with NCSC_IE_DB_PATH for a custom location.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # --- Stage 1: Build TypeScript ---
@@ -23,7 +23,7 @@ FROM node:20-slim AS production
 
 WORKDIR /app
 ENV NODE_ENV=production
-ENV BSI_DB_PATH=/app/data/bsi.db
+ENV NCSC_IE_DB_PATH=/app/data/ncsc-ie.db
 
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force

@@ -29,7 +29,10 @@ import {
   searchAdvisories,
   getAdvisory,
   listFrameworks,
+  getDataFreshness,
 } from "./db.js";
+import { buildCitation } from "./utils/citation.js";
+import { responseMeta } from "./utils/meta.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -53,11 +56,11 @@ const TOOLS = [
   {
     name: "ie_cyber_search_guidance",
     description:
-      "Full-text search across BSI guidelines and technical reports. Covers Technical Guidelines (TR series), IT-Grundschutz building blocks, BSI Standards, and recommendations.",
+      "Full-text search across NCSC-IE guidance documents and technical reports. Covers cybersecurity guidance, NIS2-IE guidance, and critical infrastructure recommendations.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        query: { type: "string", description: "Search query (e.g., 'TLS Kryptographie', 'IT-Grundschutz Server')" },
+        query: { type: "string", description: "Search query (e.g., 'ransomware', 'cloud security', 'NIS2 compliance')" },
         type: {
           type: "string",
           enum: ["technical_guideline", "it_grundschutz", "standard", "recommendation"],
@@ -66,7 +69,7 @@ const TOOLS = [
         series: {
           type: "string",
           enum: ["NCSC-IE", "NIS2-IE", "Guidance"],
-          description: "Filter by BSI series. Optional.",
+          description: "Filter by NCSC-IE series. Optional.",
         },
         status: {
           type: "string",
@@ -81,11 +84,11 @@ const TOOLS = [
   {
     name: "ie_cyber_get_guidance",
     description:
-      "Get a specific BSI guidance document by reference (e.g., 'BSI TR-03116', 'BSI-Standard 200-1', 'SYS.1.1').",
+      "Get a specific NCSC-IE guidance document by reference (e.g., 'NCSC-IE-2024-001', 'NIS2-IE-001').",
     inputSchema: {
       type: "object" as const,
       properties: {
-        reference: { type: "string", description: "BSI document reference" },
+        reference: { type: "string", description: "NCSC-IE document reference" },
       },
       required: ["reference"],
     },
@@ -93,11 +96,11 @@ const TOOLS = [
   {
     name: "ie_cyber_search_advisories",
     description:
-      "Search BSI security advisories and alerts. Returns advisories with severity, affected products, and CVE references.",
+      "Search NCSC-IE security advisories and alerts. Returns advisories with severity, affected products, and CVE references.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        query: { type: "string", description: "Search query (e.g., 'kritische Schwachstelle', 'Ransomware')" },
+        query: { type: "string", description: "Search query (e.g., 'ransomware', 'critical vulnerability')" },
         severity: {
           type: "string",
           enum: ["critical", "high", "medium", "low"],
@@ -110,11 +113,11 @@ const TOOLS = [
   },
   {
     name: "ie_cyber_get_advisory",
-    description: "Get a specific BSI security advisory by reference (e.g., 'BSI-CB-K24-0001').",
+    description: "Get a specific NCSC-IE security advisory by reference (e.g., 'NCSC-IE-2024-ADV-001').",
     inputSchema: {
       type: "object" as const,
       properties: {
-        reference: { type: "string", description: "BSI advisory reference" },
+        reference: { type: "string", description: "NCSC-IE advisory reference" },
       },
       required: ["reference"],
     },
@@ -122,12 +125,24 @@ const TOOLS = [
   {
     name: "ie_cyber_list_frameworks",
     description:
-      "List all BSI frameworks and standard series covered in this MCP.",
+      "List all NCSC-IE frameworks and standard series covered in this MCP, including NCSC-IE Guidance series, NIS2-IE guidance, and Critical Infrastructure frameworks.",
     inputSchema: { type: "object" as const, properties: {}, required: [] },
   },
   {
     name: "ie_cyber_about",
     description: "Return metadata about this MCP server: version, data source, coverage, and tool list.",
+    inputSchema: { type: "object" as const, properties: {}, required: [] },
+  },
+  {
+    name: "ie_cyber_list_sources",
+    description:
+      "List official NCSC-IE data sources ingested by this MCP, including guidance RSS feed and advisory listings. Use to verify data provenance.",
+    inputSchema: { type: "object" as const, properties: {}, required: [] },
+  },
+  {
+    name: "ie_cyber_check_data_freshness",
+    description:
+      "Check the freshness of NCSC-IE data in this MCP. Returns the latest guidance and advisory dates from the database and document counts.",
     inputSchema: { type: "object" as const, properties: {}, required: [] },
   },
 ];
@@ -172,14 +187,27 @@ function createMcpServer(): Server {
     const { name, arguments: args = {} } = request.params;
 
     function textContent(data: unknown) {
+      const payload =
+        typeof data === "object" && data !== null
+          ? { ...(data as object), _meta: responseMeta() }
+          : data;
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
+        content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
       };
     }
 
-    function errorContent(message: string) {
+    function errorContent(message: string, errorType = "tool_error") {
       return {
-        content: [{ type: "text" as const, text: message }],
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              { error: message, _error_type: errorType, _meta: responseMeta() },
+              null,
+              2,
+            ),
+          },
+        ],
         isError: true as const,
       };
     }
@@ -195,16 +223,34 @@ function createMcpServer(): Server {
             status: parsed.status,
             limit: parsed.limit,
           });
-          return textContent({ results, count: results.length });
+          const resultsWithCitation = results.map((r) => ({
+            ...r,
+            _citation: buildCitation(
+              r.reference,
+              r.title,
+              "ie_cyber_get_guidance",
+              { reference: r.reference },
+            ),
+          }));
+          return textContent({ results: resultsWithCitation, count: results.length });
         }
 
         case "ie_cyber_get_guidance": {
           const parsed = GetGuidanceArgs.parse(args);
           const doc = getGuidance(parsed.reference);
           if (!doc) {
-            return errorContent(`Guidance document not found: ${parsed.reference}`);
+            return errorContent(`Guidance document not found: ${parsed.reference}`, "not_found");
           }
-          return textContent(doc);
+          const d = doc as Record<string, unknown>;
+          return textContent({
+            ...doc,
+            _citation: buildCitation(
+              String(d.reference ?? parsed.reference),
+              String(d.title ?? d.reference ?? parsed.reference),
+              "ie_cyber_get_guidance",
+              { reference: parsed.reference },
+            ),
+          });
         }
 
         case "ie_cyber_search_advisories": {
@@ -214,16 +260,34 @@ function createMcpServer(): Server {
             severity: parsed.severity,
             limit: parsed.limit,
           });
-          return textContent({ results, count: results.length });
+          const resultsWithCitation = results.map((r) => ({
+            ...r,
+            _citation: buildCitation(
+              r.reference,
+              r.title,
+              "ie_cyber_get_advisory",
+              { reference: r.reference },
+            ),
+          }));
+          return textContent({ results: resultsWithCitation, count: results.length });
         }
 
         case "ie_cyber_get_advisory": {
           const parsed = GetAdvisoryArgs.parse(args);
           const advisory = getAdvisory(parsed.reference);
           if (!advisory) {
-            return errorContent(`Advisory not found: ${parsed.reference}`);
+            return errorContent(`Advisory not found: ${parsed.reference}`, "not_found");
           }
-          return textContent(advisory);
+          const adv = advisory as Record<string, unknown>;
+          return textContent({
+            ...advisory,
+            _citation: buildCitation(
+              String(adv.reference ?? parsed.reference),
+              String(adv.title ?? adv.reference ?? parsed.reference),
+              "ie_cyber_get_advisory",
+              { reference: parsed.reference },
+            ),
+          });
         }
 
         case "ie_cyber_list_frameworks": {
@@ -236,18 +300,50 @@ function createMcpServer(): Server {
             name: SERVER_NAME,
             version: pkgVersion,
             description:
-              "NCSC-IE (National Cyber Security Centre Ireland für Sicherheit in der Informationstechnik — German Federal Office for Information Security) MCP server. Provides access to NCSC-IE technical guidelines, IT-Grundschutz building blocks, BSI Standards, and security advisories.",
+              "NCSC-IE (National Cyber Security Centre Ireland) MCP server. Provides access to NCSC-IE cybersecurity guidance documents, NIS2-IE guidance, security advisories, and critical infrastructure frameworks.",
             data_source: "NCSC-IE (https://www.ncsc.gov.ie/)",
+            coverage: {
+              guidance: "NCSC-IE cybersecurity guidance documents and technical reports (~28 documents via RSS feed)",
+              advisories: "NCSC-IE security advisories and alerts",
+              frameworks: "NCSC-IE Guidance series, NIS2-IE, Critical Infrastructure frameworks",
+            },
             tools: TOOLS.map((t) => ({ name: t.name, description: t.description })),
           });
         }
 
+        case "ie_cyber_list_sources": {
+          return textContent({
+            sources: [
+              {
+                name: "NCSC-IE Guidance RSS Feed",
+                url: "https://www.ncsc.gov.ie/guidance/guidance.rss",
+                description: "Official RSS feed of NCSC-IE cybersecurity guidance documents",
+              },
+              {
+                name: "NCSC-IE NIS2 Guidance",
+                url: "https://www.ncsc.gov.ie/nis2/",
+                description: "NCSC-IE guidance on NIS2 Directive implementation in Ireland",
+              },
+              {
+                name: "NCSC-IE Security Advisories",
+                url: "https://www.ncsc.gov.ie/news/",
+                description: "NCSC-IE security advisories, alerts, and news",
+              },
+            ],
+          });
+        }
+
+        case "ie_cyber_check_data_freshness": {
+          const freshness = getDataFreshness();
+          return textContent(freshness);
+        }
+
         default:
-          return errorContent(`Unknown tool: ${name}`);
+          return errorContent(`Unknown tool: ${name}`, "unknown_tool");
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return errorContent(`Error executing ${name}: ${message}`);
+      return errorContent(`Error executing ${name}: ${message}`, "execution_error");
     }
   });
 

@@ -2,9 +2,9 @@
  * SQLite database access layer for the NCSC-IE (Irish Cybersecurity) MCP server.
  *
  * Schema:
- *   - guidance    — BSI guidelines, technical reports, and standards (TR, IT-Grundschutz, BSI-Standard)
- *   - advisories  — BSI security advisories and alerts
- *   - frameworks  — BSI framework series (IT-Grundschutz Kompendium, TR series, BSI Standards)
+ *   - guidance    — NCSC-IE guidance documents and technical reports
+ *   - advisories  — NCSC-IE security advisories and alerts
+ *   - frameworks  — NCSC-IE framework series (NCSC-IE Guidance, NIS2-IE, Critical Infrastructure)
  *
  * FTS5 virtual tables back full-text search on guidance and advisories.
  */
@@ -260,4 +260,31 @@ export function listFrameworks(): Framework[] {
   return db
     .prepare("SELECT * FROM frameworks ORDER BY id")
     .all() as Framework[];
+}
+
+// --- Meta queries -------------------------------------------------------------
+
+export interface DataFreshness {
+  latest_guidance_date: string | null;
+  latest_advisory_date: string | null;
+  guidance_count: number;
+  advisory_count: number;
+  ingest_script: string;
+}
+
+export function getDataFreshness(): DataFreshness {
+  const db = getDb();
+  const latestGuidance = db
+    .prepare("SELECT MAX(date) AS max_date, COUNT(*) AS cnt FROM guidance")
+    .get() as { max_date: string | null; cnt: number };
+  const latestAdvisory = db
+    .prepare("SELECT MAX(date) AS max_date, COUNT(*) AS cnt FROM advisories")
+    .get() as { max_date: string | null; cnt: number };
+  return {
+    latest_guidance_date: latestGuidance?.max_date ?? null,
+    latest_advisory_date: latestAdvisory?.max_date ?? null,
+    guidance_count: latestGuidance?.cnt ?? 0,
+    advisory_count: latestAdvisory?.cnt ?? 0,
+    ingest_script: "scripts/ingest-ncsc-ie.ts",
+  };
 }
